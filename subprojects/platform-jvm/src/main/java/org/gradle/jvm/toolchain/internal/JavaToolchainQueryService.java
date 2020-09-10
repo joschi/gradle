@@ -16,6 +16,7 @@
 
 package org.gradle.jvm.toolchain.internal;
 
+import org.gradle.api.Transformer;
 import org.gradle.api.internal.provider.DefaultProvider;
 import org.gradle.api.internal.provider.Providers;
 import org.gradle.api.provider.Provider;
@@ -24,7 +25,6 @@ import org.gradle.jvm.toolchain.install.internal.JavaToolchainProvisioningServic
 
 import javax.inject.Inject;
 import java.io.File;
-import java.util.Comparator;
 import java.util.Optional;
 import java.util.function.Predicate;
 
@@ -41,7 +41,11 @@ public class JavaToolchainQueryService {
         this.installService = provisioningService;
     }
 
-    public Provider<JavaToolchain> findMatchingToolchain(JavaToolchainSpec filter) {
+    <T> Provider<T> toolFor(JavaToolchainSpec spec, Transformer<T, JavaToolchain> toolFunction) {
+        return findMatchingToolchain(spec).map(toolFunction);
+    }
+
+    Provider<JavaToolchain> findMatchingToolchain(JavaToolchainSpec filter) {
         if (!((DefaultToolchainSpec) filter).isConfigured()) {
             return Providers.notDefined();
         }
@@ -52,16 +56,9 @@ public class JavaToolchainQueryService {
         return registry.listInstallations().stream()
             .map(this::asToolchain)
             .filter(matchingToolchain(filter))
-            .sorted(bestMatch())
+            .sorted(new JavaToolchainComparator())
             .findFirst()
             .orElseGet(() -> downloadToolchain(filter));
-    }
-
-    // TOOD: [bm] temporary order until #13892 is implemented
-    private Comparator<JavaToolchain> bestMatch() {
-        return Comparator.<JavaToolchain, String>
-            comparing(t -> t.getJavaHome().getName())
-            .reversed();
     }
 
     private JavaToolchain downloadToolchain(JavaToolchainSpec spec) {
@@ -71,11 +68,10 @@ public class JavaToolchainQueryService {
     }
 
     private Predicate<JavaToolchain> matchingToolchain(JavaToolchainSpec spec) {
-        return toolchain -> toolchain.getJavaMajorVersion() == spec.getLanguageVersion().get();
+        return toolchain -> toolchain.getLanguageVersion().equals(spec.getLanguageVersion().get());
     }
 
     private JavaToolchain asToolchain(File javaHome) {
         return toolchainFactory.newInstance(javaHome);
     }
-
 }
